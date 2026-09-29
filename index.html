@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>信号检测论 · 雷达哨兵检测实验</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ================================================================
+     屏幕一：场景与参数定义（对应评分项 01，15 分）
+     ================================================================ -->
+<header class="topbar">
+    <h1>信号检测论 · 交互式检测实验</h1>
+    <span class="topbar-sub">工程心理学 ｜ 雷达哨兵情境</span>
+</header>
+
+<main id="screen-setup" class="screen active">
+    <div class="setup-grid">
+
+        <!-- 情境说明卡：明确信号 / 噪音 / 四种结果的含义 -->
+        <section class="panel">
+            <h2>情境设定</h2>
+            <p class="lead">你是海空防空雷达站的操作员。屏幕上持续跳动的是杂波光点；偶尔会有低空突防敌机的微弱回波混在其中。你的任务是判断：这一次回波里，到底有没有敌机？</p>
+
+            <dl class="stim-def">
+                <dt>信号 (Signal)</dt>
+                <dd>低空高速突防敌机产生的微弱相干多普勒回波——比杂波更亮，但未必亮得明显。</dd>
+                <dt>噪音 (Noise)</dt>
+                <dd>海面杂波、气象云团与大气电磁热噪。它们本身就是忽明忽暗的亮点，因此"看到亮点"并不等于"有敌机"。</dd>
+            </dl>
+
+            <h3>四种判断结果的实际含义</h3>
+            <table class="outcome-table">
+                <thead>
+                    <tr><th>你的判断</th><th>实际情况</th><th>结果</th><th>战备后果</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>有信号</td><td>有敌机</td><td class="c-hit">击中 (Hit)</td><td>锁定目标，引导拦截成功</td></tr>
+                    <tr><td>无信号</td><td>有敌机</td><td class="c-miss">漏报 (Miss)</td><td>突防破防，造成防空缺口</td></tr>
+                    <tr><td>有信号</td><td>仅杂波</td><td class="c-fa">虚警 (FA)</td><td>误警，浪费拦截弹药与值班兵力</td></tr>
+                    <tr><td>无信号</td><td>仅杂波</td><td class="c-cr">正确否定 (CR)</td><td>成功剔除杂波干扰，继续保持警戒</td></tr>
+                </tbody>
+            </table>
+            <p class="note">注意：漏报与虚警的代价并不相同。后面你会看到，正是"代价不对称"决定了操作员应该把判定标准 c 放在哪里。</p>
+        </section>
+
+        <!-- 参数设定 -->
+        <section class="panel">
+            <h2>实验参数</h2>
+
+            <div class="field">
+                <label for="trialCountSelect">试次数量 <span class="req">每局 ≥ 20 试次</span></label>
+                <select id="trialCountSelect">
+                    <option value="20" selected>20 试次（课堂标准版）</option>
+                    <option value="30">30 试次</option>
+                    <option value="50">50 试次（d' 估计更稳定）</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="difficultySelect">检测难度 · 目标辨别力 d'</label>
+                <select id="difficultySelect">
+                    <option value="easy">容易（d' ≈ 2.5）：回波明亮醒目</option>
+                    <option value="medium" selected>中等（d' ≈ 1.5）：回波与杂波部分重叠</option>
+                    <option value="hard">困难（d' ≈ 0.6）：回波几乎淹没在杂波中</option>
+                </select>
+                <p class="hint">d' 越小，信号与噪音两个分布重叠越多，越难分辨。这一项改变的是你的"能力上限"。</p>
+            </div>
+
+            <div class="field">
+                <label for="priorSlider">先验概率 P(信号) <output id="priorVal">0.50</output></label>
+                <input type="range" id="priorSlider" min="0.10" max="0.90" step="0.05" value="0.50">
+                <p class="hint">敌机出现的基准率。0.50 为均等；0.20 为罕见突防；0.80 为大举来袭。</p>
+            </div>
+
+            <div class="field">
+                <label for="obsWindowSelect">刺激呈现时长（限时观测）</label>
+                <select id="obsWindowSelect">
+                    <option value="1500">1.5 秒</option>
+                    <option value="3000" selected>3.0 秒</option>
+                    <option value="6000">6.0 秒</option>
+                </select>
+                <p class="hint">观测窗到期后画面立即清空，随后做出判断。<strong>判断阶段不限时</strong>，你可以慢慢回想、慢慢决定。</p>
+            </div>
+
+            <button id="btnStart" class="btn btn-primary btn-block">开始实验（按空格键）</button>
+        </section>
+    </div>
+</main>
+
+<!-- ================================================================
+     屏幕二：交互式检测游戏（对应评分项 02，35 分）
+     ================================================================ -->
+<main id="screen-game" class="screen">
+    <div class="game-grid">
+
+        <!-- 雷达显示器：纯 DOM + CSS 实现，未使用 Canvas -->
+        <section class="panel panel-radar">
+            <div class="radar-scope" id="radarScope">
+                <div class="rs-clutter" id="radarClutter"></div>
+                <div class="rs-sweep" id="radarSweep"></div>
+                <div class="rs-blip" id="radarBlip"></div>
+                <div class="rs-offline" id="radarOffline">画面已清空</div>
+            </div>
+            <p class="radar-caption">PPI 平面位置显示器 ｜ 扫描线周期 <span id="sweepPeriodText">1.6</span> 秒</p>
+        </section>
+
+        <!-- 判定区 -->
+        <section class="panel">
+            <div class="trial-bar">
+                <span>第 <b id="gameTrialNum">0</b> / <span id="gameTotalNum">20</span> 次</span>
+                <span>已记录：击中 <b class="c-hit" id="scoreH">0</b> · 虚警 <b class="c-fa" id="scoreFA">0</b></span>
+            </div>
+
+            <div id="obsBanner" class="obs-banner">观测中……请盯住扫描线扫过的区域。</div>
+
+            <div id="gameFeedback" class="feedback" aria-live="polite"></div>
+
+            <div id="gameControls" class="decision-grid hidden">
+                <button id="btnSignalYes" class="btn btn-yes">
+                    有信号
+                    <span class="key-tip">按 J 或 1</span>
+                </button>
+                <button id="btnSignalNo" class="btn btn-no">
+                    无信号
+                    <span class="key-tip">按 F 或 2</span>
+                </button>
+            </div>
+
+            <button id="btnAbort" class="btn btn-ghost btn-small">中止本局</button>
+        </section>
+    </div>
+</main>
+
+<!-- ================================================================
+     屏幕三：结果计算与展示（对应评分项 03，30 分）
+     ================================================================ -->
+<main id="screen-results" class="screen">
+    <div class="results-wrap">
+
+        <!-- 混淆矩阵 -->
+        <section class="panel">
+            <h2>混淆矩阵</h2>
+            <p class="lead">你这一局的判断结果统计。四个格子分别对应四种结果。</p>
+            <table class="matrix-table">
+                <thead>
+                    <tr>
+                        <th rowspan="2" class="corner">你的判断</th>
+                        <th colspan="2">实际情况</th>
+                    </tr>
+                    <tr><th>有信号</th><th>无信号</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <th>说"有"</th>
+                        <td class="c-hit">击中 H = <b id="resH">0</b></td>
+                        <td class="c-fa">虚警 FA = <b id="resFA">0</b></td>
+                    </tr>
+                    <tr>
+                        <th>说"无"</th>
+                        <td class="c-miss">漏报 M = <b id="resM">0</b></td>
+                        <td class="c-cr">正确否定 CR = <b id="resCR">0</b></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- SDT 指标 -->
+        <section class="panel">
+            <h2>SDT 指标 <span id="criterionBadge" class="badge">—</span></h2>
+            <div class="metric-grid">
+                <div class="metric">
+                    <span class="metric-name">击中率 P(Hit)</span>
+                    <span class="metric-value" id="valPHit">—</span>
+                    <span class="metric-formula">H / (H + M)</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-name">虚警率 P(FA)</span>
+                    <span class="metric-value" id="valPFA">—</span>
+                    <span class="metric-formula">FA / (FA + CR)</span>
+                </div>
+                <div class="metric metric-key">
+                    <span class="metric-name">辨别力 d'</span>
+                    <span class="metric-value" id="valDPrime">—</span>
+                    <span class="metric-formula">Z(Hit) − Z(FA)</span>
+                </div>
+                <div class="metric metric-key">
+                    <span class="metric-name">判定标准 c</span>
+                    <span class="metric-value" id="valC">—</span>
+                    <span class="metric-formula">−½ · [Z(Hit) + Z(FA)]</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-name">似然比 β</span>
+                    <span class="metric-value" id="valBeta">—</span>
+                    <span class="metric-formula">exp(d' × c)</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-name">准确率</span>
+                    <span class="metric-value" id="valAcc">—</span>
+                    <span class="metric-formula">(H + CR) / N</span>
+                </div>
+            </div>
+            <p id="corrNote" class="note hidden"></p>
+            <div id="evalSummary" class="summary"></div>
+        </section>
+
+        <!-- 教学反思：参考站的核心洞察 -->
+        <section class="panel">
+            <h2>想一想：为什么光看"准确率"不够？</h2>
+            <p class="lead">下面两位同学的准确率和你都是同一个数字，但他们的问题完全不同。把他们的 P(Hit)、P(FA) 和你自己的对照着看。</p>
+            <table class="compare-table">
+                <thead>
+                    <tr><th>操作员</th><th>P(Hit)</th><th>P(FA)</th><th>d'</th><th>c</th><th>准确率</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>甲（谨慎型）</td><td>0.60</td><td>0.10</td><td>≈ 1.8</td><td>+0.52</td><td>0.75</td></tr>
+                    <tr><td>乙（宽松型）</td><td>0.90</td><td>0.40</td><td>≈ 1.8</td><td>−0.52</td><td>0.75</td></tr>
+                    <tr class="self-row"><td>你</td><td id="cmpPHit">—</td><td id="cmpPFA">—</td><td id="cmpDPrime">—</td><td id="cmpC">—</td><td id="cmpAcc">—</td></tr>
+                </tbody>
+            </table>
+            <p class="note">甲和乙的 d' 几乎一样——分辨能力相当；但 c 一正一负，说明甲的判定标准远比乙严格。准确率把这个差别完全掩盖了。把"能不能分清楚"（d'）与"敢不敢说有"（c / β）分开，正是信号检测论对工程心理学的核心贡献。</p>
+        </section>
+
+        <!-- 加分项：交互式概念可视化（分布随 d' 变化、c 滑块、ROC 曲线） -->
+        <section class="panel">
+            <h2>概念实验室</h2>
+            <p class="lead">现在换你来当实验者：拖动滑块，看 d' 和 c 如何改变两个分布的重叠程度、混淆矩阵和 ROC 曲线。</p>
+
+            <div class="lab-grid">
+                <div class="lab-chart">
+                    <h3>① 信号与噪音的双正态分布 · 判定标准 c</h3>
+                    <div id="chartDist" class="chart"></div>
+                    <p class="chart-caption" id="distCaption"></p>
+                </div>
+                <div class="lab-chart">
+                    <h3>② 接受者操作特性曲线 (ROC)</h3>
+                    <div id="chartRoc" class="chart"></div>
+                    <p class="chart-caption">曲线上的每个点 = 同一 d' 下的一种判定标准。红点是你本局的实际操作点。</p>
+                </div>
+            </div>
+
+            <div class="lab-controls">
+                <div class="field">
+                    <label for="labDSlider">辨别力 d' <output id="labDVal">1.50</output></label>
+                    <input type="range" id="labDSlider" min="-2" max="4" step="0.05" value="1.5">
+                </div>
+                <div class="field">
+                    <label for="labCSlider">判定标准 c <output id="labCVal">0.00</output></label>
+                    <input type="range" id="labCSlider" min="-2" max="2" step="0.05" value="0">
+                </div>
+            </div>
+
+            <!-- 理论混淆矩阵：与滑块联动，展示"同一 d' 下改 c 只挪动四格分布" -->
+            <table class="matrix-table lab-matrix">
+                <thead>
+                    <tr><th rowspan="2" class="corner">理论判断</th><th colspan="2">理论实际情况</th></tr>
+                    <tr><th>有信号</th><th>无信号</th></tr>
+                </thead>
+                <tbody>
+                    <tr><th>说"有"</th><td class="c-hit">P(Hit) = <b id="labPHit">—</b></td><td class="c-fa">P(FA) = <b id="labPFA">—</b></td></tr>
+                    <tr><th>说"无"</th><td class="c-miss">P(Miss) = <b id="labPMiss">—</b></td><td class="c-cr">P(CR) = <b id="labPCR">—</b></td></tr>
+                </tbody>
+            </table>
+            <p class="note" id="labNote"></p>
+        </section>
+
+        <div class="actions">
+            <button id="btnRestart" class="btn btn-primary">重新配置并开始新一局</button>
+            <button id="btnShowHistory" class="btn btn-ghost">查看多局历史对比</button>
+        </div>
+    </div>
+</main>
+
+<!-- 多局历史对比模态框（加分项：多局数据对比） -->
+<div id="historyModal" class="modal hidden">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h3>多局历史对比</h3>
+            <button id="btnCloseHistory" class="btn btn-ghost btn-small">关闭</button>
+        </div>
+        <div id="historyList" class="modal-body"></div>
+        <div class="modal-foot">
+            <button id="btnClearHistory" class="btn btn-danger btn-small">清空历史记录</button>
+        </div>
+    </div>
+</div>
+
+<footer class="footer">
+    工程心理学 · 信号检测论交互实验 ｜ HTML + CSS + 原生 JavaScript，纯前端实现 ｜ 双击 index.html 即可运行
+</footer>
+
+<!-- 依赖脚本：按依赖顺序加载，不使用 ES Module，以保证 file:// 直接打开可用 -->
+<script src="js/math_sdt.js"></script>
+<script src="js/charts_svg.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
